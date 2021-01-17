@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<Configuration status="WARN">
+  <Appenders>
+    <Console name="Console" target="SYSTEM_OUT">
+      <PatternLayout>
+        <Pattern>%style{%date{ISO8601}}{cyan} %highlight{%-5level}{DEBUG=white} %style{%-20logger{1.}}{bright,yellow} %style{[%-8t]}{bright,magenta} - %m %style{%ex}{red}%n</Pattern>
+      </PatternLayout>
+    </Console>
+
+    <!-- Async Loggers will auto-flush in batches, so switch off immediateFlush. -->
+    <RandomAccessFile name="RandomAccessFile" fileName="async.log" immediateFlush="false" append="false">
+      <PatternLayout>
+        <Pattern>%date{ISO8601} %-5level %logger{1.} [%-15t] %mdc -> %m %ex%n</Pattern>
+      </PatternLayout>
+    </RandomAccessFile>
+  </Appenders>
+  <Loggers>
+    <Root level="debug" includeLocation="false">
+      <AppenderRef ref="Console"/>
+      <AppenderRef ref="RandomAccessFile"/>
+    </Root>
+  </Loggers>
+</Configuration>

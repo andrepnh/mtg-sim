@@ -1,0 +1,26 @@
+Configuration:
+  status: warn
+  name: mtg-sim-logf4j2-config
+  thresholdFilter:
+    level: info
+  appenders:
+    Console:
+      name: STDOUT
+      target: SYSTEM_OUT
+      PatternLayout:
+        Pattern: "%m%n"
+#    File:
+#      name: File
+#      fileName: ${filename}
+#      PatternLayout:
+#        Pattern: "%d %p %C{1.} [%t] %m%n"
+#      Filters:
+#        ThresholdFilter:
+#          level: error
+
+  Loggers:
+    logger:
+    Root:
+      level: error
+      AppenderRef:
+        ref: STDOUT
