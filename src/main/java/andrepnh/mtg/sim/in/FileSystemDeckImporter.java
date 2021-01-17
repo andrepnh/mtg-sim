@@ -1,9 +1,7 @@
 package andrepnh.mtg.sim.in;
 
 import andrepnh.mtg.sim.Main;
-import andrepnh.mtg.sim.jmh.ParallelStrategy;
 import andrepnh.mtg.sim.model.Deck;
-import andrepnh.mtg.sim.util.EitherFlux;
 import io.vavr.control.Try;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -14,14 +12,12 @@ import lombok.Data;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Flux;
-import reactor.core.scheduler.Schedulers;
 
 @Data
 @Slf4j
 public class FileSystemDeckImporter {
   private static final String DECK_EXTENSION = ".deck";
   private final DeckImporter delegate;
-  private final ParallelStrategy strategy;
 
   static {
     try {
@@ -38,18 +34,16 @@ public class FileSystemDeckImporter {
   }
 
   @SneakyThrows
-  public EitherFlux<Deck> importDecks() {
+  public Flux<Deck> importDecks() {
     var fileNames = Files.list(Main.INPUT_DIR)
         .filter(path -> path.toFile().getName().endsWith(DECK_EXTENSION))
         .collect(Collectors.toList());
-    Flux<Deck> sequential = Flux.fromIterable(fileNames)
+    Flux<Deck> decks = Flux.fromIterable(fileNames)
         .map(deckFile -> delegate.importDeck(extractDeckName(deckFile), read(deckFile)))
         .filter(Try::isSuccess)
         .map(Try::get)
         .cache(fileNames.size());
-    return strategy == ParallelStrategy.PARALLEL
-        ? EitherFlux.of(sequential.parallel().runOn(Schedulers.parallel()))
-        : EitherFlux.of(sequential);
+    return decks;
   }
 
   private String extractDeckName(Path deckFile) {

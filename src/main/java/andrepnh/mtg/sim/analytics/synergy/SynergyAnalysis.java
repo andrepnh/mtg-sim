@@ -7,7 +7,6 @@ import andrepnh.mtg.sim.analytics.BaseAnalysis;
 import andrepnh.mtg.sim.analytics.synergy.count.SynergyPredicate;
 import andrepnh.mtg.sim.model.Deck;
 import andrepnh.mtg.sim.sim.GameState;
-import andrepnh.mtg.sim.util.EitherFlux;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableTable;
 import io.vavr.Tuple;
@@ -18,6 +17,7 @@ import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.publisher.ParallelFlux;
 
 @Slf4j
 public class SynergyAnalysis extends BaseAnalysis<SynergyReport> {
@@ -38,7 +38,7 @@ public class SynergyAnalysis extends BaseAnalysis<SynergyReport> {
   }
 
   @Override
-  protected Mono<SynergyReport> doAnalyze(EitherFlux<GameState> gameStates) {
+  protected Mono<SynergyReport> doAnalyze(Deck deck, ParallelFlux<GameState> gameStates) {
     Mono<ImmutableTable<String, Integer, Double>> percentagesPerTurnAndSynergy = gameStates
         .flatMap(
             gameState -> predicates
@@ -46,6 +46,7 @@ public class SynergyAnalysis extends BaseAnalysis<SynergyReport> {
                     predicate.getName(),
                     gameState.getTurn(),
                     predicate.test(gameState.getBattlefield()) ? 1 : 0)))
+        .sequential()
         .groupBy(triple -> triple.apply((a, b, c) -> Tuple.of(a, b)))
         // Don't ask me why, but just making it a parallel flux, even without runOn, keeps the app
         // from stalling
@@ -60,6 +61,7 @@ public class SynergyAnalysis extends BaseAnalysis<SynergyReport> {
                     countsByTurnAndPredicate.key()._1,
                     countsByTurnAndPredicate.key()._2,
                     sum)))
+        .sequential()
         .collect(ImmutableTable.toImmutableTable(Tuple3::_1, Tuple3::_2, Tuple3::_3));
     return percentagesPerTurnAndSynergy.map(SynergyReport::fromSynergyPercentages);
   }

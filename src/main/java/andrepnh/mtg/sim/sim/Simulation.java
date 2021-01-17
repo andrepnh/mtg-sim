@@ -1,10 +1,8 @@
 package andrepnh.mtg.sim.sim;
 
 import andrepnh.mtg.sim.Main;
-import andrepnh.mtg.sim.jmh.ParallelStrategy;
 import andrepnh.mtg.sim.model.Deck;
 import andrepnh.mtg.sim.model.Library;
-import andrepnh.mtg.sim.util.EitherFlux;
 import java.util.stream.Stream;
 import lombok.Value;
 import lombok.extern.slf4j.Slf4j;
@@ -18,30 +16,18 @@ public class Simulation {
   Shuffler shuffler;
   Deck deck;
   PlayStrategy playStrategy;
-  ParallelStrategy parallelStrategy;
 
-  public EitherFlux<GameState> runFor(int games, int turns) {
-    if (parallelStrategy == ParallelStrategy.NONE) {
-      Flux<GameState> sequential = Flux.range(1, games)
-          .flatMap(game -> {
-            log.trace("{} - simulating game {}", deck.getName(), game);
-            return runFor(turns);
-          }, Runtime.getRuntime().availableProcessors())
-          // The data doesn't consume much memory, so let's cache all of it
-          .cache(games * turns);
-      return EitherFlux.of(sequential);
-    } else {
-      int statesPerRail = (int) Math
-          .round((double) games * turns / Runtime.getRuntime().availableProcessors());
-      ParallelFlux<GameState> parallel = Flux.range(1, games)
-          .parallel()
-          .runOn(Schedulers.parallel())
-          .flatMap(game -> {
-            log.trace("{} - simulating game {}", deck.getName(), game);
-            return runFor(turns);
-          }).transformGroups(rail -> rail.cache(statesPerRail));
-      return EitherFlux.of(parallel);
-    }
+  public ParallelFlux<GameState> runFor(int games, int turns) {
+    int statesPerRail = (int) Math
+        .round((double) games * turns / Runtime.getRuntime().availableProcessors());
+    ParallelFlux<GameState> parallel = Flux.range(1, games)
+        .parallel()
+        .runOn(Schedulers.parallel())
+        .flatMap(game -> {
+          log.trace("{} - simulating game {}", deck.getName(), game);
+          return runFor(turns);
+        }).transformGroups(rail -> rail.cache(statesPerRail));
+    return parallel;
   }
 
   private Flux<GameState> runFor(int turns) {

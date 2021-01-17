@@ -10,8 +10,6 @@ import andrepnh.mtg.sim.analytics.synergy.SynergyInputImporter;
 import andrepnh.mtg.sim.card.api.ClientFacade;
 import andrepnh.mtg.sim.in.DeckImporter;
 import andrepnh.mtg.sim.in.FileSystemDeckImporter;
-import andrepnh.mtg.sim.jmh.ParallelStrategy;
-import andrepnh.mtg.sim.jmh.Step;
 import andrepnh.mtg.sim.model.Deck;
 import andrepnh.mtg.sim.model.Library;
 import andrepnh.mtg.sim.sim.GameState;
@@ -19,8 +17,6 @@ import andrepnh.mtg.sim.sim.JavaShuffler;
 import andrepnh.mtg.sim.sim.Shuffler;
 import andrepnh.mtg.sim.sim.SimplePlayStrategy;
 import andrepnh.mtg.sim.sim.Simulation;
-import andrepnh.mtg.sim.util.EitherFlux;
-import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Sets;
 import io.vavr.Tuple;
 import io.vavr.Tuple2;
@@ -34,6 +30,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.ParallelFlux;
 import reactor.tools.agent.ReactorDebugAgent;
 
 @Slf4j
@@ -47,14 +44,13 @@ public class Main {
 
   final int gamesToSimulate;
   final int turns;
-  final ImmutableMap<Step, ParallelStrategy> stepsParallelStrategy;
 
   @SneakyThrows
   public static void main(String[] args) {
     ReactorDebugAgent.init();
     var formatterFactory = new FormatterFactory();
-    EitherFlux<? extends Tuple2<Deck, Report>> reportsPerDeck
-        = new Main(GAMES_TO_SIMULATE, TURNS, ImmutableMap.of()).simulate();
+    Flux<? extends Tuple2<Deck, Report>> reportsPerDeck
+        = new Main(GAMES_TO_SIMULATE, TURNS).simulate();
     reportsPerDeck.subscribe(
         deckReportPair -> {
             var formatter = formatterFactory.getInstance(deckReportPair._2);
@@ -75,26 +71,24 @@ public class Main {
   }
 
   @SneakyThrows
-  public EitherFlux<? extends Tuple2<Deck, Report>> simulate() {
+  public Flux<? extends Tuple2<Deck, Report>> simulate() {
     var shuffler = new JavaShuffler();
     var deckImporter = new FileSystemDeckImporter(
-        new DeckImporter(new ClientFacade()),
-        getParallelStrategy(Step.DECK));
+        new DeckImporter(new ClientFacade()));
 
-    EitherFlux<Deck> decks = deckImporter.importDecks();
+    Flux<Deck> decks = deckImporter.importDecks();
     Flux<Analysis<? extends Report>> analysis = getAnalysis(decks);
 
-    EitherFlux<Tuple2<Deck, EitherFlux<GameState>>> statesPerDeck = simulateGames(shuffler, decks);
-    EitherFlux<? extends Tuple2<Deck, Report>> reportsPerDeck
+    Flux<Tuple2<Deck, ParallelFlux<GameState>>> statesPerDeck = simulateGames(shuffler, decks);
+    Flux<? extends Tuple2<Deck, Report>> reportsPerDeck
         = runAnalyses(analysis, statesPerDeck);
 
     return reportsPerDeck;
   }
 
-  private Flux<Analysis<? extends Report>> getAnalysis(EitherFlux<Deck> decks) {
+  private Flux<Analysis<? extends Report>> getAnalysis(Flux<Deck> decks) {
     var synergiesInputImported = new SynergyInputImporter();
     Flux<Analysis<? extends Report>> synergyAnalysis = decks
-        .sequentialFlux()
         .map(deck -> Tuple.of(deck, synergiesInputImported.forDeck(deck)))
         .filter(deckSynergiesPair -> !deckSynergiesPair._2.isEmpty())
         .map(pair -> pair.apply((d, s) -> new SynergyAnalysis(d, s, gamesToSimulate)));
@@ -103,14 +97,14 @@ public class Main {
         Flux.just(new AvailableManaAnalysis(), new ManaCurveAnalysis()));
   }
 
-  private EitherFlux<? extends Tuple2<Deck, Report>> runAnalyses(
+  private Flux<? extends Tuple2<Deck, Report>> runAnalyses(
       Flux<Analysis<? extends Report>> analysis,
-      EitherFlux<Tuple2<Deck, EitherFlux<GameState>>> statesPerDeck) {
+      Flux<Tuple2<Deck, ParallelFlux<GameState>>> statesPerDeck) {
     return statesPerDeck
           .flatMap(
               deckStates -> analysis
                     .filter(a -> a.appliesTo(deckStates._1))
-                    .flatMap(
+                    .concatMap(
                         a -> {
                           log.debug("{} - Applying {}", deckStates._1.getName(), a.getClass().getSimpleName());
                           return a.analyze(deckStates._1, deckStates._2);
@@ -119,18 +113,14 @@ public class Main {
               Runtime.getRuntime().availableProcessors());
   }
 
-  private EitherFlux<Tuple2<Deck, EitherFlux<GameState>>> simulateGames(
+  private Flux<Tuple2<Deck, ParallelFlux<GameState>>> simulateGames(
       Shuffler shuffler,
-      EitherFlux<Deck> decks) {
+      Flux<Deck> decks) {
     return decks
           .map(deck -> new Simulation(
-              shuffler, deck, SimplePlayStrategy.INSTANCE, getParallelStrategy(Step.SIMULATE)))
+              shuffler, deck, SimplePlayStrategy.INSTANCE))
           .map(simulation -> Tuple.of(
               simulation.getDeck(),
               simulation.runFor(gamesToSimulate, turns)));
-  }
-
-  private ParallelStrategy getParallelStrategy(Step step) {
-    return stepsParallelStrategy.getOrDefault(step, ParallelStrategy.NONE);
   }
 }
