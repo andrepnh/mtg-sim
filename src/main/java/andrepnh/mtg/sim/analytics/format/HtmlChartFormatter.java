@@ -23,7 +23,7 @@ public class HtmlChartFormatter implements ReportFormatter {
           StandardCharsets.UTF_8);
       HTML_TEMPLATE = String.join("", lines);
     } catch (Exception ex) {
-      log.error("Could not read HTML template file", ex);
+      log.error("Could not read HTML chart template file", ex);
       throw new IllegalStateException(ex);
     }
   }
@@ -39,7 +39,7 @@ public class HtmlChartFormatter implements ReportFormatter {
         .mapToObj(turn -> "'Turn " + turn + "'")
         .collect(Collectors.toList());
     String html = HTML_TEMPLATE
-        .replace("%series_labels%", seriesLabels.toString())
+        .replace("%x_axis_labels%", seriesLabels.toString())
         .replace("%data_hover_label%", report.getDataLabel())
         .replace("%data%", report.dataPerTurn().toString())
         .replace("%y_axis_suggested_max%", String.valueOf(report.yAxisMaximum()));

@@ -6,11 +6,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 import andrepnh.mtg.sim.analytics.synergy.bool.Token;
 import andrepnh.mtg.sim.analytics.synergy.bool.Tokenizer;
 import com.google.common.collect.Lists;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
-public class TokenizerTest {
+class TokenizerTest {
+
   @Test
-  public void shouldTokenizeCommonCases() {
+  void shouldTokenizeCommonCases() {
     assertThat(new Tokenizer().extractTokens("Aboroth AND Fireball"))
         .isEqualTo(Lists.newArrayList(
             Token.card("Aboroth"),
@@ -35,7 +36,7 @@ public class TokenizerTest {
   }
 
   @Test
-  public void shouldTokenizeUnusualCardNames() {
+  void shouldTokenizeUnusualCardNames() {
     assertThat(
         new Tokenizer().extractTokens(
             "Zzzyxas's Abyss AND Niv-Mizzet, the Firemind OR Kaboom! AND Evil Eye of Orms-by-Gore"))
@@ -50,7 +51,7 @@ public class TokenizerTest {
   }
 
   @Test
-  public void shouldTokenizeNestedParenthesis() {
+  void shouldTokenizeNestedParenthesis() {
     assertThat(new Tokenizer().extractTokens("0 OR (A AND (B OR C AND (D AND (E OR F) AND G AND H))) AND 9"))
         .isEqualTo(Lists.newArrayList(
             Token.card("0"),

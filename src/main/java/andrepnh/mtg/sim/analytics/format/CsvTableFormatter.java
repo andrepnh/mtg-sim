@@ -21,10 +21,10 @@ public class CsvTableFormatter implements ReportFormatter {
   public List<String> format() {
     List<String> headers = Lists.newArrayList("");
     report.dataPerTurn()
-        .rowKeySet()
+        .columnKeySet()
         .stream()
-        .map(turn -> "Turn " + turn)
         .sorted()
+        .map(turn -> "Turn " + turn)
         .forEachOrdered(headers::add);
 
     Stream<ArrayList<String>> dataRows = report.dataPerTurn()
