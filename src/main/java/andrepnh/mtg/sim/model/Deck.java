@@ -17,7 +17,7 @@ public class Deck {
   public Deck(String name, ImmutableList<Card> cards) {
     checkArgument(!name.isBlank());
     this.name = name;
-    checkArgument(checkNotNull(cards).size() == 60);
+    checkArgument(checkNotNull(cards).size() >= 40);
     List<String> moreThan4Copies = cards.stream()
         .filter(Predicate.not(Card::isLand))
         .collect(Collectors.groupingBy(Card::getName))

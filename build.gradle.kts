@@ -31,6 +31,7 @@ dependencies {
     testImplementation("org.assertj:assertj-core:3.18.1")
     testImplementation("org.junit.jupiter:junit-jupiter-engine:5.7.0")
     testImplementation("org.mockito:mockito-junit-jupiter:3.7.7")
+    testImplementation("io.projectreactor:reactor-test:3.4.2")
 }
 
 jmh {

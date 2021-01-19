@@ -9,6 +9,10 @@ import lombok.Value;
 public class Library {
   ImmutableList<Card> cards;
 
+  public static Library empty() {
+    return new Library(ImmutableList.of());
+  }
+
   public Tuple2<ImmutableList<Card>, Library> draw(int amount) {
     ImmutableList<Card> drawn = cards
         .stream()
