@@ -7,9 +7,9 @@ import java.util.Optional;
 
 public final class Util {
   public static <T> ImmutableList<T> cat(
-      ImmutableList<? extends T> first,
-      ImmutableList<? extends T> second,
-      ImmutableList<? extends T>... more) {
+      Iterable<? extends T> first,
+      Iterable<? extends T> second,
+      Iterable<? extends T>... more) {
     Builder<T> builder = ImmutableList.<T>builder()
         .addAll(first)
         .addAll(second);

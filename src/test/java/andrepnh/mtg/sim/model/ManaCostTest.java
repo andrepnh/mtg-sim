@@ -1,15 +1,8 @@
 package andrepnh.mtg.sim.model;
 
-import static andrepnh.mtg.sim.model.HybridMana.RG;
-import static andrepnh.mtg.sim.model.HybridMana.UB;
-import static andrepnh.mtg.sim.model.HybridMana.WU;
-import static andrepnh.mtg.sim.model.HybridMana._2R;
-import static andrepnh.mtg.sim.model.HybridMana._2W;
-import static andrepnh.mtg.sim.model.Mana.B;
-import static andrepnh.mtg.sim.model.Mana.G;
-import static andrepnh.mtg.sim.model.Mana.R;
-import static andrepnh.mtg.sim.model.Mana.U;
-import static andrepnh.mtg.sim.model.Mana.W;
+import static andrepnh.mtg.sim.model.BicolorHybridMana.*;
+import static andrepnh.mtg.sim.model.Mana.*;
+import static andrepnh.mtg.sim.model.MonocoloredHybridMana.*;
 import static java.util.Map.entry;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -30,10 +23,70 @@ import java.util.stream.IntStream;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 class ManaCostTest {
+
+  @ParameterizedTest(name = "fitsReturnsFalseIfNotEnoughManaIsAvailableFor{0}")
+  @ValueSource(strings = {"3", "W", "B", "U", "GG", "2G", "2GG", "1RG", "2R", "RR", "RRG", "GGR"})
+  void fitsReturnsFalseIfNotEnoughManaIsAvailableFor(String rawCost) {
+    var availableMana = ImmutableMap.of(G, 1, R, 1);
+
+    assertThat(ManaCost.parse(rawCost).fits(availableMana)).isFalse();
+  }
+
+  @ParameterizedTest(name = "fitsReturnsTrueWhenEnoughManaIsAvailableFor{0}")
+  @ValueSource(strings = {
+      "0", "1", "2", "3", "4",
+      "W", "1W", "2W", "3W", "WW", "1WW", "2WW",
+      "U", "1U", "2U", "3U",
+      "B", "1B", "2B", "3B",
+      "WU", "1WU", "2WU", "WWU", "1WWU",
+      "WB", "1WB", "2WB", "WWB", "1WWB",
+      "UB", "1UB", "2UB",
+      "WUB", "1WUB", "WWUB"})
+  void fitsReturnsTrueWhenEnoughManaIsAvailableFor(String rawCost) {
+    var availableMana = ImmutableMap.of(W, 2, U, 1, B, 1);
+
+    assertThat(ManaCost.parse(rawCost).fits(availableMana))
+        .as("Available mana is enough for total cost: %s >= %s", availableMana, rawCost)
+        .isTrue();
+  }
+
+  @ParameterizedTest(name = "fitsReturnsTrueIfAvailableManaCanBeArrangedToPayHybridCostsOf{0}")
+  @CsvSource({
+      "WWU,2/WWU",
+      "WWU,1W/UU/B",
+      "WWU,2/G",
+      "WWU,2/GW",
+      "WWU,2/GU",
+      "WWU,W/UW/UU/G",
+      "WU,1W/G",
+      "WU,W/UU/G"})
+  void fitsReturnsTrueIfAvailableManaCanBeArrangedToPayHybridCostsOf(String mana, String cost) {
+    var availableMana = mana.chars()
+        .mapToObj(c -> String.valueOf((char) c))
+        .map(Mana::valueOf)
+        .collect(Collectors.groupingBy(
+            Function.identity(),
+            Collectors.collectingAndThen(Collectors.counting(), Long::intValue)));
+
+    assertThat(ManaCost.parse(cost).fits(availableMana))
+        .as("Available mana is enough for total cost: %s >= %s", availableMana, cost)
+        .isTrue();
+  }
+
+  @ParameterizedTest(name = "fitsReturnsFalseWhenThereIsNotManaAvailableForHybridCost{0}")
+  @ValueSource(strings = {"2/W", "W/U", "W/B", "W/R", "U/B", "U/R", "B/R"})
+  void fitsReturnsFalseWhenThereIsNotManaAvailableForHybridCost(String rawCost) {
+    var availableMana = ImmutableMap.of(G, 1);
+
+    assertThat(ManaCost.parse(rawCost).fits(availableMana))
+        .as("Available mana is not enough for total cost: %s < %s", availableMana, rawCost)
+        .isFalse();
+  }
 
   @ParameterizedTest
   @ValueSource(ints = {-1, -2, Integer.MIN_VALUE})
@@ -53,7 +106,7 @@ class ManaCostTest {
 
   @Test
   void shouldNotAllowNullColoredMana() {
-    assertThatThrownBy(() -> ManaCost.of(1, null))
+    assertThatThrownBy(() -> ManaCost.of(1, (Mana[]) null))
         .isInstanceOf(NullPointerException.class);
     assertThatThrownBy(() -> ManaCost.of(1, null, null))
         .isInstanceOf(NullPointerException.class)
@@ -168,10 +221,10 @@ class ManaCostTest {
   }
 
   @ParameterizedTest
-  @EnumSource(HybridMana.class)
-  void sumShouldNotAddDifferentHybridMana(HybridMana hybrid) {
+  @EnumSource(BicolorHybridMana.class)
+  void sumShouldNotAddDifferentHybridMana(BicolorHybridMana hybrid) {
     var otherHybrids = Sets
-        .difference(EnumSet.allOf(HybridMana.class), Collections.singleton(hybrid));
+        .difference(EnumSet.allOf(BicolorHybridMana.class), Collections.singleton(hybrid));
     for (var otherHybrid: otherHybrids) {
       var sum = ManaCost.ofHybrid(0, hybrid).sum(ManaCost.ofHybrid(0, otherHybrid));
 
@@ -183,8 +236,8 @@ class ManaCostTest {
   }
 
   @ParameterizedTest
-  @EnumSource(HybridMana.class)
-  void sumShouldAddEqualHybridMana(HybridMana hybrid) {
+  @EnumSource(BicolorHybridMana.class)
+  void sumShouldAddEqualHybridMana(BicolorHybridMana hybrid) {
     var sum = ManaCost.ofHybrid(1, hybrid).sum(ManaCost.ofHybrid(2, hybrid));
     assertThat(sum.getCostPerHybridMana()).containsOnly(entry(hybrid, 2));
     assertThat(sum.getColorlessCost()).isEqualTo(3);
@@ -226,8 +279,21 @@ class ManaCostTest {
 
 
   @ParameterizedTest
-  @EnumSource(HybridMana.class)
-  void shouldParseAllDualManaSymbols(HybridMana mana) {
+  @EnumSource(BicolorHybridMana.class)
+  void shouldParseAllDualManaSymbols(BicolorHybridMana mana) {
+    String toParse = String.join("/", mana.name().split(""));
+
+    assertThat(
+        ManaCost
+            .parse(toParse)
+            .getCostPerHybridMana()
+            .keySet())
+        .containsOnly(mana);
+  }
+
+  @ParameterizedTest
+  @EnumSource(MonocoloredHybridMana.class)
+  void shouldParseAllDualManaSymbols(MonocoloredHybridMana mana) {
     String toParse = String.join(
         "/",
         mana.name()
@@ -264,6 +330,22 @@ class ManaCostTest {
     assertThatThrownBy(() -> ManaCost.parse(rawCost))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("Invalid mana cost: " + rawCost);
+  }
+
+  @Test
+  void cmcShouldNotIncludeXs() {
+    assertThat(
+        ManaCost.withX(1, 0)
+            .sum(ManaCost.withX(2, 1)
+            .sum(ManaCost.withX(1, 1, 0, W))
+            .sum(ManaCost.withXAndHybrid(1, 0, WU)))
+            .cmc())
+        .isEqualTo(3);
+  }
+
+  @Test
+  void cmcShouldUseHighestCostForHybrids() {
+    assertThat(ManaCost.parse("22/WU/BG").cmc()).isEqualTo(6);
   }
 
   private List<ManaCost> randomCosts(int amount) {

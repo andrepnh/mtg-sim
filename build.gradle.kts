@@ -36,6 +36,10 @@ dependencies {
     testAnnotationProcessor("org.projectlombok:lombok:1.18.16")
 }
 
+tasks.withType<Test> {
+    useJUnitPlatform()
+}
+
 jmh {
     iterations = 1
     benchmarkMode = listOf("avgt") // [Throughput/thrpt, AverageTime/avgt, SampleTime/sample, SingleShotTime/ss, All/all]

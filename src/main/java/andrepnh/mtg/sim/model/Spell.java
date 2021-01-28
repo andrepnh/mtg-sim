@@ -5,5 +5,6 @@ import lombok.Value;
 @Value
 public class Spell implements Card {
   String name;
-  int cmc;
+  ManaCost cost;
+
 }

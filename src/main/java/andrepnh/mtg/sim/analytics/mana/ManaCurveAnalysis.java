@@ -66,7 +66,7 @@ public class ManaCurveAnalysis extends BaseAnalysis<ManaCurveReport> {
         .getPlayed()
         .stream()
         .filter(Predicate.not(Card::isLand))
-        .mapToInt(card -> ((Spell) card).getCmc())
+        .mapToInt(card -> ((Spell) card).getCost().cmc())
         .sum();
   }
 }

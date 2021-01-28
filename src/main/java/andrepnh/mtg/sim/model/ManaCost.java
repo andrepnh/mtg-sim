@@ -9,20 +9,27 @@ import com.google.common.base.Strings;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Lists;
+import com.google.common.collect.Sets;
+import io.vavr.Tuple;
+import io.vavr.Tuple2;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.EnumSet;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import lombok.Value;
+import reactor.core.publisher.Flux;
 
 @Value
 public class ManaCost {
@@ -36,7 +43,7 @@ public class ManaCost {
   ImmutableList<Integer> xs;
   int colorlessCost;
   ImmutableMap<Mana, Integer> costPerColoredMana;
-  ImmutableMap<HybridMana, Integer> costPerHybridMana;
+  ImmutableMap<HybridMana<?>, Integer> costPerHybridMana;
 
   public static ManaCost of(int colorlessCost, Mana... coloredCost) {
     return new ManaCost(
@@ -70,7 +77,7 @@ public class ManaCost {
         Collections.emptyMap());
   }
 
-  public static ManaCost ofHybrid(int colorlessCost, HybridMana first, HybridMana... more) {
+  public static ManaCost ofHybrid(int colorlessCost, HybridMana<?> first, HybridMana<?>... more) {
     return new ManaCost(
         ImmutableList.of(),
         colorlessCost,
@@ -78,7 +85,7 @@ public class ManaCost {
         groupBySymbol(first, more));
   }
 
-  public static ManaCost withXAndHybrid(int xs, int colorlessCost, HybridMana first, HybridMana... more) {
+  public static ManaCost withXAndHybrid(int xs, int colorlessCost, HybridMana<?> first, HybridMana<?>... more) {
     return new ManaCost(
         ImmutableList.of(xs),
         colorlessCost,
@@ -86,26 +93,8 @@ public class ManaCost {
         groupBySymbol(first, more));
   }
 
-  public static ManaCost withXAndHybrid(
-      int xs1, int xs2, int colorlessCost, HybridMana first, HybridMana... more) {
-    return new ManaCost(
-        ImmutableList.of(xs1, xs2),
-        colorlessCost,
-        Collections.emptyMap(),
-        groupBySymbol(first, more));
-  }
-
-  public static ManaCost withXAndHybrid(
-      int xs1, int xs2, int xs3, int colorlessCost, HybridMana first, HybridMana... more) {
-    return new ManaCost(
-        ImmutableList.of(xs1, xs2, xs3),
-        colorlessCost,
-        Collections.emptyMap(),
-        groupBySymbol(first, more));
-  }
-
   public static ManaCost withAll(
-      int xs, int colorlessCost, ImmutableList<Mana> coloredCost, ImmutableList<HybridMana> hybridCost) {
+      int xs, int colorlessCost, ImmutableList<Mana> coloredCost, ImmutableList<HybridMana<?>> hybridCost) {
     return new ManaCost(
         xs == 0 ? ImmutableList.of() : ImmutableList.of(xs),
         colorlessCost,
@@ -123,7 +112,7 @@ public class ManaCost {
       String colorlessString = matcher.group("colorless");
       int colorless = colorlessString.isEmpty() ? 0 : Integer.parseInt(colorlessString);
       String hybridSymbols = matcher.group("hybrid");
-      List<HybridMana> hybridMana = parseHybrid(hybridSymbols);
+      List<HybridMana<?>> hybridMana = parseHybrid(hybridSymbols);
       String manaSymbols = matcher.group("colored");
       var colored = Strings.isNullOrEmpty(manaSymbols)
           ? new Mana[0]
@@ -140,17 +129,17 @@ public class ManaCost {
     }
   }
 
-  private static List<HybridMana> parseHybrid(String hybridSymbols) {
-    List<String> chars = hybridSymbols.chars()
-        .mapToObj(c -> String.valueOf((char) c))
-        .collect(Collectors.toList());
-    // Split every third char
-    return Lists.partition(chars, 3)
-        .stream()
-        .map(hybridSymbolString -> String.join("", hybridSymbolString)
-            .replace("/", ""))
-        .map(HybridMana::parse)
-        .collect(Collectors.toList());
+  private static List<HybridMana<?>> parseHybrid(String hybridSymbols) {
+    return Flux.fromStream(hybridSymbols.chars().boxed())
+        .filter(charCode -> charCode != '/')
+        .map(charCode -> String.valueOf((char) charCode.intValue()))
+        .buffer(2)
+        .map(hybridSymbolString -> String.join("", hybridSymbolString))
+        .map(hybridSymbol -> hybridSymbol.contains("2")
+            ? (HybridMana<?>) MonocoloredHybridMana.parse(hybridSymbol)
+            : BicolorHybridMana.parse(hybridSymbol))
+        .collectList()
+        .block();
   }
 
   private static Map<Mana, Integer> groupBySymbol(Mana... coloredCosts) {
@@ -163,11 +152,11 @@ public class ManaCost {
             Collectors.collectingAndThen(Collectors.counting(), Long::intValue)));
   }
 
-  private static Map<HybridMana, Integer> groupBySymbol(HybridMana first, HybridMana... more) {
+  private static Map<HybridMana<?>, Integer> groupBySymbol(HybridMana<?> first, HybridMana<?>... more) {
     return groupBySymbol(Lists.asList(first, more));
   }
 
-  private static Map<HybridMana, Integer> groupBySymbol(List<HybridMana> hybridMana) {
+  private static Map<HybridMana<?>, Integer> groupBySymbol(List<HybridMana<?>> hybridMana) {
     return hybridMana.stream()
         .collect(Collectors.groupingBy(
             Function.identity(),
@@ -178,7 +167,7 @@ public class ManaCost {
       ImmutableList<Integer> xs,
       int colorlessCost,
       Map<Mana, Integer> coloredCosts,
-      Map<HybridMana, Integer> hybridManaCosts) {
+      Map<HybridMana<?>, Integer> hybridManaCosts) {
     checkNotNull(xs, "xs")
         .forEach(x -> checkArgument(x > 0, "Invalid amount of X in %s", xs));
     checkArgument(colorlessCost >= 0, "Colorless cost must be >= 0; got %s", colorlessCost);
@@ -188,10 +177,20 @@ public class ManaCost {
     this.costPerHybridMana = ImmutableMap.copyOf(hybridManaCosts);
   }
 
+  public int cmc() {
+    int colored = costPerColoredMana.values().stream().mapToInt(i -> i).sum();
+    // Rule 203.3c: https://yawgatog.com/resources/rules-changes/mor-shm/?id=11
+    int hybrid = costPerHybridMana.entrySet()
+        .stream()
+        .mapToInt(kv -> kv.getKey().isMonocoloredHybrid() ? 2 * kv.getValue() : kv.getValue())
+        .sum();
+    return colorlessCost + colored + hybrid;
+  }
+
   public ManaCost sum(ManaCost that) {
     requireNonNull(that);
     Map<Mana, Integer> coloredManaSum = sumColoredMana(that);
-    Map<HybridMana, Integer> hybridManaSum = sumHybridMana(that);
+    Map<HybridMana<?>, Integer> hybridManaSum = sumHybridMana(that);
 
     return new ManaCost(
         cat(this.xs, that.xs),
@@ -218,9 +217,10 @@ public class ManaCost {
         .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
   }
 
-  private Map<HybridMana, Integer> sumHybridMana(ManaCost that) {
+  private Map<HybridMana<?>, Integer> sumHybridMana(ManaCost that) {
     var hybridManaSum = new HashMap<>(costPerHybridMana);
-    for (var hybridMana: HybridMana.values()) {
+    for (var hybridMana:
+        cat(EnumSet.allOf(BicolorHybridMana.class), EnumSet.allOf(MonocoloredHybridMana.class))) {
       hybridManaSum.merge(
           hybridMana,
           that.costPerHybridMana.getOrDefault(hybridMana, 0),
@@ -234,16 +234,65 @@ public class ManaCost {
   }
 
   public boolean fits(Map<Mana, Integer> manaAvailable) {
-    int remainingColorless = colorlessCost;
     manaAvailable = new HashMap<>(manaAvailable);
     for (var entry: costPerColoredMana.entrySet()) {
-      int remaining = manaAvailable.merge(entry.getKey(), 0, (aval, cost) -> aval - cost);
-      // Immediately try to use what's left to pay colorless
-      remainingColorless = Math.max(0, remainingColorless - remaining);
+      manaAvailable.merge(entry.getKey(), -entry.getValue(), Integer::sum);
     }
-    return remainingColorless == 0 && manaAvailable.values()
+    int remainingColorless = colorlessCost;
+    for (var manaType: manaAvailable.keySet()) {
+      if (remainingColorless == 0) {
+        break;
+      }
+      int toTake = Math.min(remainingColorless, manaAvailable.getOrDefault(manaType, 0));
+      manaAvailable.merge(manaType, 0, (curr, nw) -> curr - nw);
+      remainingColorless -= toTake;
+    }
+
+    boolean fitsHybridCost = true;
+    if (!costPerHybridMana.isEmpty()) {
+      fitsHybridCost = fitsHybridCost(manaAvailable);
+    }
+
+    return fitsHybridCost
+        && remainingColorless == 0
+        && manaAvailable.values()
+            .stream()
+            .allMatch(available -> available >= 0);
+  }
+
+  private boolean fitsHybridCost(Map<Mana, Integer> manaAvailable) {
+    List<HashSet<Object>> hybridManaOptions = costPerHybridMana.entrySet()
         .stream()
-        .allMatch(available -> available >= 0);
+        .flatMap(entry -> Collections.nCopies(entry.getValue(), entry.getKey()).stream())
+        .map(hybrid -> Sets.newHashSet(hybrid.option1(), hybrid.option2()))
+        .collect(Collectors.toList());
+
+    // Brute forcing since cardinality should be small
+    Set<List<Object>> hybridCombinations = Sets.cartesianProduct(hybridManaOptions);
+    return hybridCombinations.stream()
+        .anyMatch(combination -> {
+          Tuple2<List<Integer>, List<Mana>> combinationCosts = splitByCostType(combination);
+          int totalColorless = combinationCosts._1.stream().mapToInt(i -> i).sum();
+          var combinationCost = ManaCost.of(
+              totalColorless,
+              combinationCosts._2.toArray(Mana[]::new));
+          return combinationCost.fits(manaAvailable);
+        });
+  }
+
+  private Tuple2<List<Integer>, List<Mana>> splitByCostType(List<Object> manaCosts) {
+    var colorlessCosts = new ArrayList<Integer>();
+    var coloredCosts = new ArrayList<Mana>();
+    for (Object manaCost: manaCosts) {
+      if (manaCost instanceof Integer) {
+        colorlessCosts.add((Integer) manaCost);
+      } else if (manaCost instanceof Mana) {
+        coloredCosts.add((Mana) manaCost);
+      } else {
+        throw new IllegalArgumentException("Unknown mana cost: " + manaCost);
+      }
+    }
+    return Tuple.of(colorlessCosts, coloredCosts);
   }
 
   @Override
@@ -277,4 +326,5 @@ public class ManaCost {
   public int hashCode() {
     return Objects.hash(xs, colorlessCost, costPerColoredMana, costPerHybridMana);
   }
+
 }

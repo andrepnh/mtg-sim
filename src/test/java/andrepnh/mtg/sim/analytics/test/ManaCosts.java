@@ -1,8 +1,10 @@
 package andrepnh.mtg.sim.analytics.test;
 
+import andrepnh.mtg.sim.model.BicolorHybridMana;
 import andrepnh.mtg.sim.model.HybridMana;
 import andrepnh.mtg.sim.model.Mana;
 import andrepnh.mtg.sim.model.ManaCost;
+import andrepnh.mtg.sim.model.MonocoloredHybridMana;
 import com.google.common.collect.ImmutableList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -27,8 +29,15 @@ public class ManaCosts {
         .collect(ImmutableList.toImmutableList());
 
     int hybridColors = ThreadLocalRandom.current().nextInt(0, 3);
-    var hybrid = IntStream.range(0, hybridColors)
-        .mapToObj(unused -> RandomUtils.choose(Arrays.asList(HybridMana.values())))
+    ImmutableList<HybridMana<?>> hybrid = IntStream.range(0, hybridColors)
+        .mapToObj(unused -> {
+          boolean bicolor = ThreadLocalRandom.current().nextBoolean();
+          if (bicolor) {
+            return RandomUtils.choose(Arrays.asList(BicolorHybridMana.values()));
+          } else {
+            return RandomUtils.choose(Arrays.asList(MonocoloredHybridMana.values()));
+          }
+        })
         .flatMap(hybridColor -> Collections
             .nCopies(
                 ThreadLocalRandom.current().nextInt(1, 4),
