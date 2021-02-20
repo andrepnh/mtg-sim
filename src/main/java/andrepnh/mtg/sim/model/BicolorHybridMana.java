@@ -8,6 +8,7 @@ import static andrepnh.mtg.sim.model.Mana.W;
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
 
+import com.google.common.base.MoreObjects;
 import io.vavr.control.Either;
 import lombok.Getter;
 
@@ -41,5 +42,10 @@ public enum BicolorHybridMana implements HybridMana<Mana> {
   @Override
   public Mana option2() {
     return option2;
+  }
+
+  @Override
+  public String toString() {
+    return name().charAt(0) + "/" + name().charAt(1);
   }
 }

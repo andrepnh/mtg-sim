@@ -5,6 +5,7 @@ import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static java.util.Objects.requireNonNull;
 
+import com.google.common.base.MoreObjects;
 import com.google.common.base.Strings;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
@@ -22,6 +23,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.regex.Matcher;
@@ -37,6 +39,11 @@ public class ManaCost {
       ImmutableList.of(), 0, Collections.emptyMap(), Collections.emptyMap());
   private static final Pattern MANA_COST_PATTERN = Pattern
       .compile("(?<x>X*)(?<colorless>\\d*)(?<hybrid>(?:[2WUBRG]/[WUBRG])*)(?<colored>[WUBRG]*)");
+  private static final Comparator<HybridMana<?>> HYBRID_MANA_COMPARATOR = (c1, c2) -> {
+    int mult1 = c1.isMonocoloredHybrid() ? 1 : 10,
+        mult2 = c2.isMonocoloredHybrid() ? 1 : 10;
+    return ((Enum) c1).ordinal() * mult1 - ((Enum) c2).ordinal() * mult2;
+  };
 
   // Each integer represents the amount of duplicated Xs (e.g. XXW -> [2]W) and separate elements
   // means this cost has different Xs (e.g. XW.sum(XR) -> [1, 1]WR
@@ -233,34 +240,41 @@ public class ManaCost {
         .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
   }
 
-  public boolean fits(Map<Mana, Integer> manaAvailable) {
-    manaAvailable = new HashMap<>(manaAvailable);
-    for (var entry: costPerColoredMana.entrySet()) {
-      manaAvailable.merge(entry.getKey(), -entry.getValue(), Integer::sum);
-    }
-    int remainingColorless = colorlessCost;
-    for (var manaType: manaAvailable.keySet()) {
-      if (remainingColorless == 0) {
-        break;
-      }
-      int toTake = Math.min(remainingColorless, manaAvailable.getOrDefault(manaType, 0));
-      manaAvailable.merge(manaType, 0, (curr, nw) -> curr - nw);
-      remainingColorless -= toTake;
-    }
-
-    boolean fitsHybridCost = true;
-    if (!costPerHybridMana.isEmpty()) {
-      fitsHybridCost = fitsHybridCost(manaAvailable);
-    }
-
-    return fitsHybridCost
-        && remainingColorless == 0
-        && manaAvailable.values()
-            .stream()
-            .allMatch(available -> available >= 0);
+  /**
+   * @return an optional containing the mana used to cast card(s) represented by this cost, or an
+   * empty optional if the mana available is not enough.
+   */
+  public Optional<List<Mana>> payWith(ImmutableMap<Mana, Integer> manaAvailable) {
+    return doPayWith(manaAvailable, ImmutableList.of())
+        .map(pair -> new ArrayList<>(pair._2));
   }
 
-  private boolean fitsHybridCost(Map<Mana, Integer> manaAvailable) {
+  private Optional<Tuple2<ImmutableMap<Mana, Integer>, ImmutableList<Mana>>> doPayWith(
+      ImmutableMap<Mana, Integer> manaAvailable, ImmutableList<Mana> manaUsed) {
+    return payColorCostsWith(manaAvailable, manaUsed)
+        .flatMap(pair -> pair.apply((available, used) -> payHybridCostsWith(available, used)))
+        .flatMap(pair -> pair.apply((available, used) -> payColorlessCostsWith(available, used)));
+  }
+
+  private Optional<Tuple2<ImmutableMap<Mana, Integer>, ImmutableList<Mana>>> payColorCostsWith(
+      ImmutableMap<Mana, Integer> manaAvailable, ImmutableList<Mana> manaUsedSoFar) {
+    var available = new HashMap<>(manaAvailable);
+    var used = new ArrayList<>(manaUsedSoFar);
+    for (var entry: costPerColoredMana.entrySet()) {
+      int manaLeft = available.merge(entry.getKey(), -entry.getValue(), Integer::sum);
+      if (manaLeft < 0) {
+        return Optional.empty();
+      }
+      used.addAll(Collections.nCopies(entry.getValue(), entry.getKey()));
+    }
+    return Optional.of(Tuple.of(ImmutableMap.copyOf(available), ImmutableList.copyOf(used)));
+  }
+
+  private Optional<Tuple2<ImmutableMap<Mana, Integer>, ImmutableList<Mana>>> payHybridCostsWith(
+      ImmutableMap<Mana, Integer> manaAvailable, ImmutableList<Mana> manaUsedSoFar) {
+    if (costPerHybridMana.isEmpty()) {
+      return Optional.of(Tuple.of(manaAvailable, manaUsedSoFar));
+    }
     List<HashSet<Object>> hybridManaOptions = costPerHybridMana.entrySet()
         .stream()
         .flatMap(entry -> Collections.nCopies(entry.getValue(), entry.getKey()).stream())
@@ -270,14 +284,39 @@ public class ManaCost {
     // Brute forcing since cardinality should be small
     Set<List<Object>> hybridCombinations = Sets.cartesianProduct(hybridManaOptions);
     return hybridCombinations.stream()
-        .anyMatch(combination -> {
+        .map(combination -> {
           Tuple2<List<Integer>, List<Mana>> combinationCosts = splitByCostType(combination);
           int totalColorless = combinationCosts._1.stream().mapToInt(i -> i).sum();
           var combinationCost = ManaCost.of(
               totalColorless,
               combinationCosts._2.toArray(Mana[]::new));
-          return combinationCost.fits(manaAvailable);
-        });
+          return combinationCost.doPayWith(manaAvailable, manaUsedSoFar);
+        })
+        .filter(Optional::isPresent)
+        .findAny()
+        .flatMap(Function.identity());
+  }
+
+  private Optional<Tuple2<ImmutableMap<Mana, Integer>, ImmutableList<Mana>>> payColorlessCostsWith(
+      ImmutableMap<Mana, Integer> manaAvailable, ImmutableList<Mana> manaUsedSoFar) {
+    var available = new HashMap<>(manaAvailable);
+    var used = new ArrayList<>(manaUsedSoFar);
+    int remainingColorless = colorlessCost;
+    for (var entry: manaAvailable.entrySet()) {
+      if (remainingColorless == 0) {
+        break;
+      }
+      int toTake = Math.min(remainingColorless, entry.getValue());
+      available.merge(entry.getKey(), 0, (curr, nw) -> curr - nw);
+      remainingColorless -= toTake;
+      used.addAll(Collections.nCopies(toTake, entry.getKey()));
+    }
+
+    if (remainingColorless > 0) {
+      return Optional.empty();
+    } else {
+      return Optional.of(Tuple.of(ImmutableMap.copyOf(available), ImmutableList.copyOf(used)));
+    }
   }
 
   private Tuple2<List<Integer>, List<Mana>> splitByCostType(List<Object> manaCosts) {
@@ -293,6 +332,37 @@ public class ManaCost {
       }
     }
     return Tuple.of(colorlessCosts, coloredCosts);
+  }
+
+  private String joinWithoutDelimiter(List<?> list) {
+    return list.stream()
+        .map(Object::toString)
+        .collect(Collectors.joining());
+  }
+
+  private <T> List<T> flatten(ImmutableMap<T, Integer> costPerMana) {
+    var flattened = new ArrayList<T>();
+    costPerMana.forEach((key, value) -> flattened.addAll(Collections.nCopies(value, key)));
+    return flattened;
+  }
+
+  private List<HybridMana<?>> sortHybrid(List<HybridMana<?>> hybridCosts) {
+    hybridCosts.sort(HYBRID_MANA_COMPARATOR);
+    return hybridCosts;
+  }
+
+  @Override
+  public String toString() {
+    boolean zero = colorlessCost == 0 && xs.isEmpty()
+        && costPerColoredMana.isEmpty() && costPerHybridMana.isEmpty();
+    return zero
+        ? "0"
+        : String.format(
+            "%s%s%s%s",
+            xs.isEmpty() ? "" : Strings.repeat("X", xs.get(0)),
+            colorlessCost == 0 ? "" : colorlessCost,
+            joinWithoutDelimiter(sortHybrid(flatten(costPerHybridMana))),
+            joinWithoutDelimiter(flatten(costPerColoredMana)));
   }
 
   @Override

@@ -3,41 +3,72 @@ package andrepnh.mtg.sim.model;
 import static andrepnh.mtg.sim.model.BicolorHybridMana.*;
 import static andrepnh.mtg.sim.model.Mana.*;
 import static andrepnh.mtg.sim.model.MonocoloredHybridMana.*;
+import static andrepnh.mtg.sim.test.ListAssertion.assertThatList;
 import static java.util.Map.entry;
+import static org.assertj.core.api.Assertions.as;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import andrepnh.mtg.sim.analytics.test.ManaCosts;
+import andrepnh.mtg.sim.test.Varargs;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
+import org.assertj.core.api.InstanceOfAssertFactories;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.aggregator.AggregateWith;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 class ManaCostTest {
 
-  @ParameterizedTest(name = "fitsReturnsFalseIfNotEnoughManaIsAvailableFor{0}")
-  @ValueSource(strings = {"3", "W", "B", "U", "GG", "2G", "2GG", "1RG", "2R", "RR", "RRG", "GGR"})
-  void fitsReturnsFalseIfNotEnoughManaIsAvailableFor(String rawCost) {
-    var availableMana = ImmutableMap.of(G, 1, R, 1);
+  @Test
+  void payWithShouldBeConsistent() {
+    var cost = ManaCost.parse("1W/UU/B");
+    var availableMana = ImmutableMap.of(W, 2, U, 1);
 
-    assertThat(ManaCost.parse(rawCost).fits(availableMana)).isFalse();
+    for (int i = 0; i < 100; i++) {
+      assertThat(cost.payWith(availableMana))
+          .get(as(InstanceOfAssertFactories.LIST))
+          .containsExactlyInAnyOrder(W, W, U);
+    }
   }
 
-  @ParameterizedTest(name = "fitsReturnsTrueWhenEnoughManaIsAvailableFor{0}")
+  @Test
+  void payWithShouldPrioritizeManaUsageBasedOnCost() {
+    var cost = ManaCost.parse("1W/U2/UW");
+    var availableMana = ImmutableMap.of(W, 1, U, 1, B, 3);
+
+    Optional<List<Mana>> manaUsed = cost.payWith(availableMana);
+
+    assertThat(manaUsed)
+        .get(as(InstanceOfAssertFactories.LIST))
+        .containsExactlyInAnyOrder(W, U, B, B, B);
+  }
+
+  @ParameterizedTest(name = "payWithReturnsEmptyListIfNotEnoughManaIsAvailableFor{0}")
+  @ValueSource(strings = {"3", "W", "B", "U", "GG", "2G", "2GG", "1RG", "2R", "RR", "RRG", "GGR"})
+  void payWithReturnsEmptyListIfNotEnoughManaIsAvailableFor(String rawCost) {
+    var availableMana = ImmutableMap.of(G, 1, R, 1);
+
+    assertThat(ManaCost.parse(rawCost).payWith(availableMana)).isEmpty();
+  }
+
+  @ParameterizedTest(name = "payWithReturnsManaUsedWhenEnoughIsAvailableFor{0}")
   @ValueSource(strings = {
       "0", "1", "2", "3", "4",
       "W", "1W", "2W", "3W", "WW", "1WW", "2WW",
@@ -47,45 +78,57 @@ class ManaCostTest {
       "WB", "1WB", "2WB", "WWB", "1WWB",
       "UB", "1UB", "2UB",
       "WUB", "1WUB", "WWUB"})
-  void fitsReturnsTrueWhenEnoughManaIsAvailableFor(String rawCost) {
+  void payWithReturnsManaUsedWhenEnoughIsAvailableFor(String rawCost) {
     var availableMana = ImmutableMap.of(W, 2, U, 1, B, 1);
+    int expectedManaUsed = rawCost.matches("\\d+.*")
+        ? Integer.parseInt(rawCost.substring(0, 1)) + rawCost.length() - 1
+        : rawCost.length();
 
-    assertThat(ManaCost.parse(rawCost).fits(availableMana))
+    assertThat(ManaCost.parse(rawCost).payWith(availableMana))
+        .get(as(InstanceOfAssertFactories.LIST))
         .as("Available mana is enough for total cost: %s >= %s", availableMana, rawCost)
-        .isTrue();
+        .hasSize(expectedManaUsed);
   }
 
-  @ParameterizedTest(name = "fitsReturnsTrueIfAvailableManaCanBeArrangedToPayHybridCostsOf{0}")
+  @ParameterizedTest(name = "shouldUse[{2}]OutOf[{0}]ToPay[{1}]")
   @CsvSource({
-      "WWU,2/WWU",
-      "WWU,1W/UU/B",
-      "WWU,2/G",
-      "WWU,2/GW",
-      "WWU,2/GU",
-      "WWU,W/UW/UU/G",
-      "WU,1W/G",
-      "WU,W/UU/G"})
-  void fitsReturnsTrueIfAvailableManaCanBeArrangedToPayHybridCostsOf(String mana, String cost) {
-    var availableMana = mana.chars()
+      "WWU,2/WWU,WWU",
+      "WWU,1W/UU/B,WWU",
+      "WWU,2/G,WW,WU",
+      "WWU,2/GW,WWU",
+      "WWU,2/GU,WWU",
+      "WWU,W/UW/UU/G,WWU",
+      "WU,1W/G,WU",
+      "WU,W/UU/G,WU"})
+  void payWithReturnsManaUsedIfAvailableManaCanBeArrangedToPayHybridCostsOf(
+      String mana, String cost, @AggregateWith(Varargs.class) String... expectedManaUsed) {
+    List<List<Mana>> options = Stream.of(expectedManaUsed)
+        .map(manaUsed -> Stream.of(manaUsed.split(""))
+            .map(Mana::valueOf)
+            .collect(Collectors.toList()))
+        .collect(Collectors.toList());
+    var availableMana = ImmutableMap.copyOf(mana.chars()
         .mapToObj(c -> String.valueOf((char) c))
         .map(Mana::valueOf)
         .collect(Collectors.groupingBy(
             Function.identity(),
-            Collectors.collectingAndThen(Collectors.counting(), Long::intValue)));
+            Collectors.collectingAndThen(Collectors.counting(), Long::intValue))));
 
-    assertThat(ManaCost.parse(cost).fits(availableMana))
-        .as("Available mana is enough for total cost: %s >= %s", availableMana, cost)
-        .isTrue();
+    var manaUsed = ManaCost.parse(cost).payWith(availableMana);
+    assertThat(manaUsed).isNotEmpty();
+    manaUsed.get().sort(Comparator.naturalOrder());
+
+    assertThatList(manaUsed.get()).containsExactlyAnyOf(options);
   }
 
-  @ParameterizedTest(name = "fitsReturnsFalseWhenThereIsNotManaAvailableForHybridCost{0}")
+  @ParameterizedTest(name = "payWithReturnsEmptyListWhenThereIsNotManaAvailableForHybridCost{0}")
   @ValueSource(strings = {"2/W", "W/U", "W/B", "W/R", "U/B", "U/R", "B/R"})
-  void fitsReturnsFalseWhenThereIsNotManaAvailableForHybridCost(String rawCost) {
+  void payWithReturnsEmptyListWhenThereIsNotManaAvailableForHybridCost(String rawCost) {
     var availableMana = ImmutableMap.of(G, 1);
 
-    assertThat(ManaCost.parse(rawCost).fits(availableMana))
+    assertThat(ManaCost.parse(rawCost).payWith(availableMana))
         .as("Available mana is not enough for total cost: %s < %s", availableMana, rawCost)
-        .isFalse();
+        .isEmpty();
   }
 
   @ParameterizedTest
@@ -352,5 +395,14 @@ class ManaCostTest {
     return IntStream.range(0, amount)
         .mapToObj(unused -> ManaCosts.random())
         .collect(Collectors.toList());
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"0", "1", "W", "X", "XW", "W/U", "2/U", "XX22/GB/RU"})
+  void toStringShouldUseTheSameFormatReadByParse(String manaCost) {
+    var firstParse = ManaCost.parse(manaCost);
+    var secondParse = ManaCost.parse(firstParse.toString());
+    assertThat(secondParse.toString()).isEqualTo(manaCost);
+    assertThat(secondParse).isEqualTo(firstParse);
   }
 }

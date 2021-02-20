@@ -46,6 +46,6 @@ public enum MonocoloredHybridMana implements HybridMana<Integer> {
 
   @Override
   public String toString() {
-    return name().replace("_", "");
+    return name().charAt(1) + "/" + name().charAt(2);
   }
 }
