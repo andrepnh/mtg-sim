@@ -60,6 +60,30 @@ class ManaCostTest {
         .containsExactlyInAnyOrder(W, U, B, B, B);
   }
 
+  @Test
+  void payWithShouldUseAsMuchManaAsPossibleForX() {
+    var cost = ManaCost.parse("X1");
+    var availableMana = ImmutableMap.of(W, 1, U, 1, B, 3);
+
+    Optional<List<Mana>> manaUsed = cost.payWith(availableMana);
+
+    assertThat(manaUsed)
+        .get(as(InstanceOfAssertFactories.LIST))
+        .containsExactlyInAnyOrder(W, U, B, B, B);
+  }
+
+  @Test
+  void payWithShouldUseAsMuchManaAsPossibleForDoubleX() {
+    var cost = ManaCost.parse("XXW");
+    var availableMana = ImmutableMap.of(W, 1, B, 5);
+
+    Optional<List<Mana>> manaUsed = cost.payWith(availableMana);
+
+    assertThat(manaUsed)
+        .get(as(InstanceOfAssertFactories.LIST))
+        .containsExactlyInAnyOrder(W, B, B, B, B);
+  }
+
   @ParameterizedTest(name = "payWithReturnsEmptyListIfNotEnoughManaIsAvailableFor{0}")
   @ValueSource(strings = {"3", "W", "B", "U", "GG", "2G", "2GG", "1RG", "2R", "RR", "RRG", "GGR"})
   void payWithReturnsEmptyListIfNotEnoughManaIsAvailableFor(String rawCost) {

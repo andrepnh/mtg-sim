@@ -253,7 +253,8 @@ public class ManaCost {
       ImmutableMap<Mana, Integer> manaAvailable, ImmutableList<Mana> manaUsed) {
     return payColorCostsWith(manaAvailable, manaUsed)
         .flatMap(pair -> pair.apply((available, used) -> payHybridCostsWith(available, used)))
-        .flatMap(pair -> pair.apply((available, used) -> payColorlessCostsWith(available, used)));
+        .flatMap(pair -> pair.apply((available, used) -> payColorlessCostsWith(available, used)))
+        .flatMap(pair -> pair.apply((available, used) -> payX(available, used)));
   }
 
   private Optional<Tuple2<ImmutableMap<Mana, Integer>, ImmutableList<Mana>>> payColorCostsWith(
@@ -307,7 +308,7 @@ public class ManaCost {
         break;
       }
       int toTake = Math.min(remainingColorless, entry.getValue());
-      available.merge(entry.getKey(), 0, (curr, nw) -> curr - nw);
+      available.merge(entry.getKey(), toTake, (curr, nw) -> curr - nw);
       remainingColorless -= toTake;
       used.addAll(Collections.nCopies(toTake, entry.getKey()));
     }
@@ -317,6 +318,24 @@ public class ManaCost {
     } else {
       return Optional.of(Tuple.of(ImmutableMap.copyOf(available), ImmutableList.copyOf(used)));
     }
+  }
+
+  private Optional<Tuple2<ImmutableMap<Mana, Integer>, ImmutableList<Mana>>> payX(
+      ImmutableMap<Mana, Integer> manaAvailable, ImmutableList<Mana> manaUsedSoFar) {
+    if (xs.isEmpty()) {
+      return Optional.of(Tuple.of(manaAvailable, manaUsedSoFar));
+    }
+    var available = new HashMap<>(manaAvailable);
+    var used = new ArrayList<>(manaUsedSoFar);
+    int xCount = xs.get(0);
+    for (var entry: manaAvailable.entrySet()) {
+      // Not redundant, we're doing integer division
+      int toTake = (entry.getValue() / xCount) * xCount;
+      available.merge(entry.getKey(), toTake, (curr, nw) -> curr - nw);
+      used.addAll(Collections.nCopies(toTake, entry.getKey()));
+    }
+
+    return Optional.of(Tuple.of(ImmutableMap.copyOf(available), ImmutableList.copyOf(used)));
   }
 
   private Tuple2<List<Integer>, List<Mana>> splitByCostType(List<Object> manaCosts) {
@@ -397,4 +416,7 @@ public class ManaCost {
     return Objects.hash(xs, colorlessCost, costPerColoredMana, costPerHybridMana);
   }
 
+  public boolean hasX() {
+    return !xs.isEmpty();
+  }
 }

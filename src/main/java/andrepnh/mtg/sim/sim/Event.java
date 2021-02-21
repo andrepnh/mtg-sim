@@ -9,6 +9,5 @@ import lombok.Value;
 public class Event {
   int turn;
   Battlefield battlefield;
-  ImmutableList<Card> drawn;
-  ImmutableList<Card> played;
+  Line line;
 }

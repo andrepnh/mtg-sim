@@ -3,6 +3,7 @@ package andrepnh.mtg.sim.model;
 import static com.google.common.base.Preconditions.checkArgument;
 
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.Lists;
 import io.vavr.Tuple2;
 import java.util.ArrayList;
 import lombok.Value;
@@ -10,7 +11,15 @@ import org.apache.logging.log4j.util.Strings;
 
 @Value
 public class Hand {
-  ImmutableList<Card> cards;
+  ImmutableList<? extends Card> cards;
+
+  public Hand(ImmutableList<? extends Card> cards) {
+    this.cards = cards;
+  }
+
+  public Hand(Card first, Card... rest) {
+    this.cards = ImmutableList.copyOf(Lists.asList(first, rest));
+  }
 
   public static Hand empty() {
     return new Hand(ImmutableList.of());

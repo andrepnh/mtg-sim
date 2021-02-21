@@ -7,6 +7,7 @@ import andrepnh.mtg.sim.model.Land;
 import andrepnh.mtg.sim.model.Library;
 import andrepnh.mtg.sim.model.Spell;
 import andrepnh.mtg.sim.sim.GameState;
+import andrepnh.mtg.sim.sim.Line;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 
@@ -18,8 +19,7 @@ public class GameStates {
         Hand.empty(),
         Library.empty(),
         new Battlefield(ImmutableList.of(onBattleField), ImmutableList.of()),
-        ImmutableList.of(),
-        ImmutableList.of(played));
+        new Line(ImmutableList.of(played), ImmutableList.of(), ImmutableList.of()));
   }
 
   public static GameState turnCompletelyEmpty(int turn) {
@@ -28,8 +28,7 @@ public class GameStates {
         Hand.empty(),
         Library.empty(),
         new Battlefield(ImmutableList.of(), ImmutableList.of()),
-        ImmutableList.of(),
-        ImmutableList.of());
+        Line.empty());
   }
 
   public static GameState turnWithOnlyLandsOnBattlefield(int turn, Land first, Land... more) {
@@ -37,9 +36,8 @@ public class GameStates {
         turn,
         Hand.empty(),
         Library.empty(),
-        Battlefield.empty(),
-        ImmutableList.of(),
-        ImmutableList.of());
+        new Battlefield(ImmutableList.copyOf(Lists.asList(first, more)), ImmutableList.of()),
+        Line.empty());
   }
 
   public static GameState turnWithOnlySpellsPlayed(int turn, Spell first, Spell... more) {
@@ -47,9 +45,11 @@ public class GameStates {
         turn,
         Hand.empty(),
         Library.empty(),
-        Battlefield.empty(),
-        ImmutableList.of(),
-        ImmutableList.copyOf(Lists.asList(first, more)));
+        new Battlefield(ImmutableList.of(), ImmutableList.copyOf(Lists.asList(first, more))),
+        new Line(
+            ImmutableList.of(),
+            ImmutableList.copyOf(Lists.asList(first, more)),
+            ImmutableList.of()));
   }
 
   public static GameState turnWithOnlyCardsOnBattlefield(int turn, Spell first, Spell... more) {
@@ -58,7 +58,6 @@ public class GameStates {
         Hand.empty(),
         Library.empty(),
         new Battlefield(ImmutableList.of(), ImmutableList.copyOf(Lists.asList(first, more))),
-        ImmutableList.of(),
-        ImmutableList.of());
+        Line.empty());
   }
 }

@@ -7,9 +7,12 @@ import andrepnh.mtg.sim.model.Card;
 import andrepnh.mtg.sim.model.Hand;
 import andrepnh.mtg.sim.model.Land;
 import andrepnh.mtg.sim.model.Library;
+import andrepnh.mtg.sim.model.Mana;
 import andrepnh.mtg.sim.model.Spell;
 import com.google.common.collect.ImmutableList;
 import io.vavr.Tuple2;
+import io.vavr.Tuple3;
+import java.util.Collection;
 import lombok.Value;
 
 @Value
@@ -18,8 +21,7 @@ public class GameState {
   Hand hand;
   Library library;
   Battlefield battlefield;
-  ImmutableList<Card> drawn;
-  ImmutableList<Card> played;
+  Line line;
 
   public static GameState theOpening(Library library) {
     Tuple2<ImmutableList<Card>, Library> postDrawn = library.draw(7);
@@ -27,30 +29,32 @@ public class GameState {
         Hand.empty().add(postDrawn._1),
         postDrawn._2,
         Battlefield.empty(),
-        postDrawn._1,
-        ImmutableList.of());
+        Line.empty());
   }
 
   public GameState next(PlayStrategy playStrategy) {
     Tuple2<ImmutableList<Card>, Library> postDraw = library.draw(1);
     Hand newHand = hand.add(postDraw._1);
-    Tuple2<ImmutableList<Land>, ImmutableList<Spell>> plays = playStrategy
+    var line = playStrategy
         .choose(newHand, battlefield.getLands());
-    newHand = newHand.remove(cat(plays._1, plays._2));
+    newHand = newHand.remove(cat(line.getLandsPlayed(), line.getSpellsPlayed()));
     return new GameState(
         this.turn + 1,
         newHand,
         postDraw._2,
-        plays.apply(battlefield::add),
-        postDraw._1,
-        cat(plays._1, plays._2));
+        battlefield.add(line.getLandsPlayed(), line.getSpellsPlayed()),
+        line);
   }
 
   public Event toEvent() {
-    return new Event(turn, battlefield, drawn, played);
+    return new Event(turn, battlefield, line);
   }
 
   public ImmutableList<Land> getLands() {
     return battlefield.getLands();
+  }
+
+  public Collection<Card> getPlayed() {
+    return line.getPlayed();
   }
 }
